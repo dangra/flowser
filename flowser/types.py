@@ -21,11 +21,11 @@
 import time
 
 from boto.swf.exceptions import SWFTypeAlreadyExistsError
+from boto.swf.layer1_decisions import Layer1Decisions
 
 from flowser import serializing
 from flowser.exceptions import Error
 from flowser.exceptions import EmptyTaskPollResult
-from flowser import decisions
 
 ONE_HOUR = 60 * 60
 ONE_DAY = ONE_HOUR * 24
@@ -121,20 +121,24 @@ class Activity(Type):
     @classmethod
     def schedule(cls, input, control=None):
         "Called from subclasses' ``schedule`` class method. "
-        dec, attrs = decisions.skeleton("ScheduleActivityTask")
-        attrs['activityId'] = cls.get_id_from_input(input)
-        attrs['activityType'] = {
-                'name': cls.name,
-                'version': cls.version}
-        attrs['taskList'] = {'name': cls.task_list}
-        attrs['input'] = serializing.dumps(input)
-        attrs['heartbeatTimeout'] = cls.heartbeat_timeout
-        attrs['scheduleToCloseTimeout'] = cls.schedule_to_close_timeout
-        attrs['scheduleToStartTimeout'] = cls.schedule_to_start_timeout
-        attrs['startToCloseTimeout'] = cls.start_to_close_timeout
+        activity_id = cls.get_id_from_input(input)
         if control is not None:
-            attrs['control'] = serializing.dumps(control)
-        return dec
+            control = serializing.dumps(control)
+
+        l1d = Layer1Decisions()
+        l1d.schedule_activity_task(
+            activity_id=activity_id,
+            activity_type_name=cls.name,
+            activity_type_version=cls.version,
+            task_list=cls.task_list,
+            control=control,
+            heartbeat_timeout=cls.heartbeat_timeout,
+            schedule_to_close_timeout=cls.schedule_to_close_timeout,
+            schedule_to_start_timeout=cls.schedule_to_start_timeout,
+            start_to_close_timeout=cls.start_to_close_timeout,
+            input=serializing.dumps(input),
+        )
+        return l1d._data[0]
 
 
 class Workflow(Type):
@@ -221,16 +225,28 @@ class Workflow(Type):
     @classmethod
     def start_child(cls, input, control=None):
         """Start child workflow execution. 
-        
+
         ``input`` is serialized and a workflow id is generated from it
         using ``get_id_from_input``.
 
         """
-        dec, attrs = decisions.skeleton("StartChildWorkflowExecution")
-        attrs.update(cls._get_static_child_start_attrs())
-        attrs['workflowId'] = cls.get_id_from_input(input)
-        attrs['input'] = serializing.dumps(input)
+        workflow_id = cls.get_id_from_input(input)
         if control is not None:
-            attrs['control'] = serializing.dumps(control)
-        return dec
+            control = serializing.dumps(control)
 
+        l1d = Layer1Decisions()
+        l1d.start_child_workflow_execution(
+            workflow_type_name=cls.name,
+            workflow_type_version=cls.version,
+            child_policy=cls.child_policy,
+            control=control,
+            execution_start_to_close_timeout=cls.execution_start_to_close_timeout,
+            input=serializing.dumps(input),
+            tag_list=cls.tag_list,
+            task_list=cls.task_list,
+            task_start_to_close_timeout=cls.task_start_to_close_timeout,
+        )
+        # Unreleased bugfix in boto
+        # https://github.com/boto/boto/commit/d5602f7299a919eceded11ba6da438543609c6db#L0R272
+        l1d._data[0]['startChildWorkflowExecutionDecisionAttributes']['workflowId'] = workflow_id
+        return l1d._data[0]

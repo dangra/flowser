@@ -18,8 +18,8 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+from boto.swf.layer1_decisions import Layer1Decisions
 from flowser import serializing
-from flowser import decisions
 from flowser.events import Event
 from flowser.exceptions import LastPage
 
@@ -47,10 +47,8 @@ class WorkflowExecution(object):
 
         This can only be called from a decision task.
         """
-        dec, attrs = decisions.skeleton("CompleteWorkflowExecution")
-        attrs['result'] = serializing.dumps(result)
-        self._caller._decisions.append(dec)
-        self._caller.complete(context=context)
+        result = serializing.dumps(result)
+        self._caller.decisions.complete_workflow_execution(result)
 
     def request_cancel(self):
         self._domain.conn.request_cancel(self._domain.name, self.workflow_id, 
@@ -137,7 +135,7 @@ class Decision(object):
         :param result: Result structure from the API. 
         :param caller: Caller object (subclass of ``types.Type``).
         """
-        self._decisions = []
+        self.decisions = Layer1Decisions()
         self._caller = caller
         self._domain = caller._domain
 
@@ -214,11 +212,7 @@ class Decision(object):
 
     def mark(self, name, details=None):
         """Adds a RecordMarker decision. """
-        dec, attrs = decisions.skeleton("RecordMarker")
-        attrs['markerName'] = name
-        if details:
-            attrs['details'] = details
-        self._decisions.append(dec)
+        self.decisions.record_marker(marker_name=name, details=details)
         return self
 
     def schedule(self, activity_type, *args, **kwargs):
@@ -230,7 +224,7 @@ class Decision(object):
         :param activity_type: Subclass of ``types.Activity``.
         """
         dec = activity_type.schedule(*args, **kwargs)
-        self._decisions.append(dec)
+        self.decisions._data.append(dec)
         return self
 
     def start_child(self, workflow_type, *args, **kwargs):
@@ -242,15 +236,17 @@ class Decision(object):
         :param workflow_type: Subclass of ``types.Workflow``.
         """
         dec = workflow_type.start_child(*args, **kwargs)
-        self._decisions.append(dec)
+        self.decisions._data.append(dec)
         return self
 
     def complete(self, context=None):
         execution_context = None
         if context is not None:
             execution_context = serializing.dumps(context)
+
+        decisions = self.decisions._data
         self._domain.conn.respond_decision_task_completed(
-                self.task_token, decisions=self._decisions,
+                self.task_token, decisions=decisions,
                 execution_context=execution_context)
 
     def fail(self, details=None, reason=None):
