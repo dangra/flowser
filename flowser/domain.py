@@ -56,7 +56,7 @@ class Domain(object):
         types = (self.workflow_types or []) + (self.activity_types or [])
         [t(self)._register(raise_exists=raise_exists) for t in types]
 
-    def start(self, t, input):
+    def start(self, t, workflow_id, input):
         """Start execution.
 
         Internally, this method creates an instance of ``t`` and calls its
@@ -64,7 +64,7 @@ class Domain(object):
 
         :param t: Subclass of ``types.Type``.
         """
-        return t(self)._start(input)
+        return t(self)._start(workflow_id, input)
 
     def decisions(self, t):
         """High-level interface to iterate over decision tasks.

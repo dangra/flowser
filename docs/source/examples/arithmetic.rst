@@ -4,40 +4,16 @@
 Arithmetic Example
 ==================
 
-Utilities 
----------
-
-Ids for workflows and activities are created behind the scenes by
-inspecting inputs. ``get_id_from_input`` beneath assumes that the input
-has an "id" key and appends this value to the class name of the workflow
-or activity::
-
-    import flowser
-
-    @classmethod
-    def get_id_from_input(cls, input):
-        return ".".join([cls.name, input['id']])
-
-This function sets version and task list properties on decorated
-classes. It also makes classes use our ``get_id_from_input`` function
-defined earlier::
-
-    def auto_configured(cls):
-        """Class decorator for workflows and activities. """
-        cls.version = '1.0.0'
-        cls.task_list = '-'.join([cls.name, cls.version])
-        cls.get_id_from_input = get_id_from_input
-        return cls
-
 Domain, Workflow and Activities
 -------------------------------
 
 Definition of a workflow that performs arithmetic::
 
-    @auto_configured
     class ArithmeticWorkflow(flowser.types.Workflow):
         """Workflow for performing arithmetics. """
         name = 'ArithmeticWorkflow'
+        version = '1.0.0'
+        task_list = 'mainTaskList'
         execution_start_to_close_timeout = '600'
         task_start_to_close_timeout = '120'
         child_policy = 'TERMINATE'
@@ -45,17 +21,19 @@ Definition of a workflow that performs arithmetic::
 Definition of two activities. These will be scheduled from arithmetic
 workflows::
 
-    @auto_configured
     class MultiplyActivity(flowser.types.Activity):
         name = 'MultiplyActivity'
+        version = '1.0.0'
+        task_list = 'Multiply'
         heartbeat_timeout = '60'
         schedule_to_close_timeout = '60'
         schedule_to_start_timeout = '60'
         start_to_close_timeout = '60'
 
-    @auto_configured
     class SumActivity(flowser.types.Activity):
         name = 'SumActivity'
+        version = '1.0.0'
+        task_list = 'Sum'
         heartbeat_timeout = '60'
         schedule_to_close_timeout = '60'
         schedule_to_start_timeout = '60'
@@ -91,8 +69,8 @@ Implementations of worker threads for our workflow and activities::
                     # Schedule tasks from "operations" input. 
                     for op_id, op, input in task.start_input['operations']:
                         activity = op_to_activity[op]
-                        task.schedule(activity, {
-                            'id': task.start_input['id'], 
+                        task_id = str(uuid4())
+                        task.schedule(activity, task_id, {
                             'operation': [op_id, input],
                             })
                     task.complete()
@@ -147,11 +125,11 @@ Start workers and an execution::
     ArithmeticWorkflowDecider().start()
 
     import uuid
+    workflow_id = str(uuid.uuid4())
     arithmetic_input = {
-        'id': str(uuid.uuid4()),
         'operations': [
             ['mult_id', 'multiply', [1, 2, 3]],
             ['sum_id', 'sum', [1, 2, 3, 4]],
             ],
         }
-    domain.start(ArithmeticWorkflow, arithmetic_input)
+    domain.start(ArithmeticWorkflow, workflow_id, arithmetic_input)

@@ -41,8 +41,7 @@ def _raise_if_empty_poll_result(result):
 class Type(object):
     """Base class for Simple Workflow types (activities, workflows).
 
-    Subclasses must set ``name``, ``version`` and ``task_list`` properties. They
-    must also implement ``get_id_from_input``.
+    Subclasses must set ``name``, ``version`` and ``task_list`` properties.
     """
 
     # Override this in a subclass to the name (string) of a register method on
@@ -64,20 +63,6 @@ class Type(object):
         except SWFTypeAlreadyExistsError:
             if raise_exists:
                 raise Error(self)
-
-    @staticmethod
-    def get_id_from_input(input):
-        """Get id from input.
-
-        This class method is used to get unique workflow and activity ids.
-
-        A typical implementation may retrieve and id field from the input and
-        append it to the class's task list.
-
-        :param input: Input used when starting and scheduling 
-                                workflows and tasks.
-        """
-        raise NotImplementedError('implement in subclass')
 
     def _poll_for_activity_task(self, identity=None):
         """Low-level wrapper for boto's method with the same name. 
@@ -119,9 +104,8 @@ class Activity(Type):
     start_to_close_timeout = str(ONE_HOUR)
 
     @classmethod
-    def schedule(cls, input, control=None):
+    def schedule(cls, activity_id, input, control=None):
         "Called from subclasses' ``schedule`` class method. "
-        activity_id = cls.get_id_from_input(input)
         if control is not None:
             control = serializing.dumps(control)
 
@@ -156,21 +140,6 @@ class Workflow(Type):
     child_policy = 'TERMINATE'
     default_filter_tag = None
     default_tag_list = None
-
-    def _get_static_start_kwargs(self):
-        "Get start execeution arguments that never change. "
-        return {
-                'domain': self._domain.name,
-                'workflow_name': self.name,
-                'workflow_version': self.version,
-                'execution_start_to_close_timeout': \
-                    self.execution_start_to_close_timeout,
-                'task_start_to_close_timeout': \
-                    self.task_start_to_close_timeout,
-                'child_policy': self.child_policy,
-                'tag_list': self.default_tag_list,
-                'task_list': self.task_list,
-                }
 
     @classmethod
     def _get_static_child_start_attrs(cls):
@@ -210,27 +179,24 @@ class Workflow(Type):
                 workflow_name=self.name,
                 tag=self.default_filter_tag)
 
-    def _start(self, input):
-        """Start workflow execution. 
-
-        ``input`` is serialized and a workflow id is generated from it
-        using ``get_id_from_input``.
-
-        """
-        kwargs = self._get_static_start_kwargs()
-        kwargs['workflow_id'] = self.get_id_from_input(input)
-        kwargs['input'] = serializing.dumps(input)
-        return self._conn.start_workflow_execution(**kwargs)
+    def _start(self, workflow_id, input):
+        """Start workflow execution"""
+        return self._conn.start_workflow_execution(
+            domain=self._domain.name,
+            workflow_id=workflow_id,
+            workflow_name=self.name,
+            workflow_version=self.version,
+            task_list=self.task_list,
+            child_policy=self.child_policy,
+            execution_start_to_close_timeout=self.execution_start_to_close_timeout,
+            input=serializing.dumps(input), 
+            tag_list=self.default_tag_list, # XXX: name missmatch
+            task_start_to_close_timeout=self.task_start_to_close_timeout,
+        )
 
     @classmethod
-    def start_child(cls, input, control=None):
-        """Start child workflow execution. 
-
-        ``input`` is serialized and a workflow id is generated from it
-        using ``get_id_from_input``.
-
-        """
-        workflow_id = cls.get_id_from_input(input)
+    def start_child(cls, workflow_id, input, control=None):
+        """Start child workflow execution"""
         if control is not None:
             control = serializing.dumps(control)
 

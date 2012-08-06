@@ -42,33 +42,23 @@ TEST_DOMAIN = os.environ.get('FLOWSER_TEST_DOMAIN', None)
 if_environment = unittest.skipIf(not TEST_DOMAIN, 'FLOWSER_TEST_DOMAIN unset')
 
 
-@classmethod
-def get_id_from_input(cls, input):
-    return ".".join([cls.name, input['id']])
-
-
-def auto_configured(cls):
-    """Class decorator for test types. """
-    cls.version = '1.0.0'
-    cls.task_list = '-'.join([cls.name, cls.version])
-    cls.get_id_from_input = get_id_from_input
-    return cls
-
-
-@auto_configured
 class ArithmeticWorkflow(flowser.types.Workflow):
     """Workflow for performing arithmetics. """
     name = 'ArithmeticWorkflow'
+    version = '1.0.0'
+    task_list = 'mainTaskList'
 
 
-@auto_configured
 class MultiplyActivity(flowser.types.Activity):
     name = 'MultiplyActivity'
+    version = '1.0.0'
+    task_list = 'Multiply'
 
 
-@auto_configured
 class SumActivity(flowser.types.Activity):
     name = 'SumActivity'
+    version = '1.0.0'
+    task_list = 'Sum'
 
 
 class Thread(threading.Thread):
@@ -93,10 +83,10 @@ class ArithmeticWorkflowDecider(Thread):
             if is_new:
                 for op_id, op, input in task.start_input['operations']:
                     activity = op_to_activity[op]
-                    task.schedule(activity, {
-                        'id': task.start_input['id'], 
+                    task_id = str(uuid4())
+                    task.schedule(activity, task_id, {
                         'operation': [op_id, input],
-                        })
+                    })
             else:
                 op_ids = set([x[0] for x in task.start_input['operations']])
                 results = {}
@@ -150,6 +140,7 @@ class SumWorker(WorkerThread):
 
 class TestDomain(flowser.Domain):
     name = TEST_DOMAIN
+    retention_period = '1'
     workflow_types = [ArithmeticWorkflow]
     activity_types = [MultiplyActivity, SumActivity]
 
@@ -166,11 +157,6 @@ class FlowserTestCase(unittest.TestCase):
         # This tests registration of domains, workflows and activites.
         cls.domain.register(raise_exists=False)
 
-    def get_input(self, extra_input):
-        start_input = {'id': str(uuid4())}
-        start_input.update(extra_input)
-        return start_input
-
     @if_environment
     def test_workflow_and_activities(self):
         MultiplyWorker(self.domain).start()
@@ -178,13 +164,14 @@ class FlowserTestCase(unittest.TestCase):
         decider = ArithmeticWorkflowDecider(self.domain)
         decider.start()
 
-        arithmetic_input = self.get_input({
+        workflow_id = str(uuid4())
+        arithmetic_input = {
             'operations': [
                 ['mult_id', 'multiply', [1, 2, 3]],
                 ['sum_id', 'sum', [1, 2, 3, 4]],
-                ]
-            })
-        self.domain.start(ArithmeticWorkflow, arithmetic_input)
+            ]
+        }
+        self.domain.start(ArithmeticWorkflow, workflow_id, arithmetic_input)
 
         decider.join()
         self.assertEqual(decider.result['mult_id'], 6)
