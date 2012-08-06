@@ -95,11 +95,15 @@ def attrs(result):
     attributes_key = _attr_key_lookup[event_type]
     ev_attrs = result[attributes_key]
     for key in _auto_unserialize_attrs.get(event_type, []):
+        if key not in ev_attrs:
+            continue
+
         value = ev_attrs[key]
         try:
             ev_attrs[key] = serializing.loads(value)
         except TypeError:
             pass
+
     return ev_attrs
 
 
